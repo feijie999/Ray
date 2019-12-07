@@ -17,9 +17,9 @@ namespace Ray.EventBus.RabbitMQ
         readonly IRabbitEventBusContainer rabbitEventBusContainer;
         readonly IServiceProvider provider;
         readonly IGrainFactory grainFactory;
-        const int _HoldTime = 20 * 1000;
-        const int _MonitTime = 60 * 2 * 1000;
-        const int _checkTime = 10 * 1000;
+        const int HoldTime = 20 * 1000;
+        const int MonitTime = 60 * 2 * 1000;
+        const int CheckTime = 10 * 1000;
 
         public ConsumerManager(
             ILogger<ConsumerManager> logger,
@@ -141,9 +141,9 @@ namespace Ray.EventBus.RabbitMQ
         {
             if (logger.IsEnabled(LogLevel.Information))
                 logger.LogInformation("EventBus Background Service is starting.");
-            DistributedMonitorTime = new Timer(state => DistributedStart().Wait(), null, 1000, _MonitTime);
-            DistributedHoldTimer = new Timer(state => DistributedHold().Wait(), null, _HoldTime, _HoldTime);
-            HeathCheckTimer = new Timer(state => { HeathCheck().Wait(); }, null, _checkTime, _checkTime);
+            DistributedMonitorTime = new Timer(state => DistributedStart().Wait(), null, 1000, MonitTime);
+            DistributedHoldTimer = new Timer(state => DistributedHold().Wait(), null, HoldTime, HoldTime);
+            HeathCheckTimer = new Timer(state => { HeathCheck().Wait(); }, null, CheckTime, CheckTime);
             return Task.CompletedTask;
         }
         public Task StopAsync(CancellationToken cancellationToken)
