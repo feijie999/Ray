@@ -15,14 +15,12 @@ namespace Ray.Core.Serialization
         public byte[] Bytes { get; set; }
         public byte[] GetBytes()
         {
-            var eventTypeBytes = Encoding.Default.GetBytes(TypeFullName);
-            using (var ms = new PooledMemoryStream())
-            {
-                ms.WriteByte((byte)TransportType.Common);
-                ms.Write(BitConverter.GetBytes((ushort)eventTypeBytes.Length));
-                ms.Write(Bytes);
-                return ms.ToArray();
-            }
+            var eventTypeBytes = Encoding.UTF8.GetBytes(TypeFullName);
+            using var ms = new PooledMemoryStream();
+            ms.WriteByte((byte)TransportType.Common);
+            ms.Write(BitConverter.GetBytes((ushort)eventTypeBytes.Length));
+            ms.Write(Bytes);
+            return ms.ToArray();
         }
         public static (bool success, CommonTransport wrapper) FromBytes(byte[] bytes)
         {
@@ -32,7 +30,7 @@ namespace Ray.Core.Serialization
                 var eventTypeLength = BitConverter.ToUInt16(bytesSpan.Slice(1, sizeof(ushort)));
                 return (true, new CommonTransport
                 {
-                    TypeFullName = Encoding.Default.GetString(bytesSpan.Slice(sizeof(ushort) + 1, eventTypeLength)),
+                    TypeFullName = Encoding.UTF8.GetString(bytesSpan.Slice(sizeof(ushort) + 1, eventTypeLength)),
                     Bytes = bytesSpan.Slice(sizeof(ushort) + 1 + eventTypeLength).ToArray()
                 });
             }

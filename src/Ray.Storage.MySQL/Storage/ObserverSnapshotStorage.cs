@@ -19,73 +19,63 @@ namespace Ray.Storage.MySQL
         {
             this.config = config;
             var observerStateTable = config.ObserverSnapshotTable;
-            deleteSql = $"DELETE FROM {observerStateTable} where stateid=@StateId";
-            getByIdSql = $"select * FROM {observerStateTable} where stateid=@StateId";
-            insertSql = $"INSERT into {observerStateTable}(stateid,version,StartTimestamp)VALUES(@StateId,@Version,@StartTimestamp)";
-            updateSql = $"update {observerStateTable} set version=@Version,StartTimestamp=@StartTimestamp where stateid=@StateId";
-            updateStartTimestampSql = $"update {observerStateTable} set StartTimestamp=@StartTimestamp where stateid=@StateId";
+            deleteSql = $"DELETE FROM {observerStateTable} where StateId=@StateId";
+            getByIdSql = $"select * FROM {observerStateTable} where StateId=@StateId";
+            insertSql = $"INSERT into {observerStateTable}(StateId,Version,StartTimestamp)VALUES(@StateId,@Version,@StartTimestamp)";
+            updateSql = $"update {observerStateTable} set Version=@Version,StartTimestamp=@StartTimestamp where StateId=@StateId";
+            updateStartTimestampSql = $"update {observerStateTable} set StartTimestamp=@StartTimestamp where StateId=@StateId";
         }
         public async Task<ObserverSnapshot<PrimaryKey>> Get(PrimaryKey id)
         {
-            using (var conn = config.CreateConnection())
+            using var conn = config.CreateConnection();
+            var data = await conn.QuerySingleOrDefaultAsync<ObserverSnapshotModel>(getByIdSql, new { StateId = id });
+            if (data != null)
             {
-                var data = await conn.QuerySingleOrDefaultAsync<ObserverSnapshotModel>(getByIdSql, new { StateId = id });
-                if (data != default)
+                return new ObserverSnapshot<PrimaryKey>()
                 {
-                    return new ObserverSnapshot<PrimaryKey>()
-                    {
-                        StateId = id,
-                        Version = data.Version,
-                        DoingVersion = data.Version,
-                        StartTimestamp = data.StartTimestamp
-                    };
-                }
+                    StateId = id,
+                    Version = data.Version,
+                    DoingVersion = data.Version,
+                    StartTimestamp = data.StartTimestamp
+                };
             }
             return default;
         }
         public async Task Insert(ObserverSnapshot<PrimaryKey> snapshot)
         {
-            using (var connection = config.CreateConnection())
+            using var connection = config.CreateConnection();
+            await connection.ExecuteAsync(insertSql, new
             {
-                await connection.ExecuteAsync(insertSql, new
-                {
-                    snapshot.StateId,
-                    snapshot.Version,
-                    snapshot.StartTimestamp
-                });
-            }
+                snapshot.StateId,
+                snapshot.Version,
+                snapshot.StartTimestamp
+            });
         }
 
         public async Task Update(ObserverSnapshot<PrimaryKey> snapshot)
         {
-            using (var connection = config.CreateConnection())
+            using var connection = config.CreateConnection();
+            await connection.ExecuteAsync(updateSql, new
             {
-                await connection.ExecuteAsync(updateSql, new
-                {
-                    snapshot.StateId,
-                    snapshot.Version,
-                    snapshot.StartTimestamp
-                });
-            }
+                snapshot.StateId,
+                snapshot.Version,
+                snapshot.StartTimestamp
+            });
         }
         public async Task Delete(PrimaryKey id)
         {
-            using (var conn = config.CreateConnection())
-            {
-                await conn.ExecuteAsync(deleteSql, new { StateId = id });
-            }
+            using var conn = config.CreateConnection();
+            await conn.ExecuteAsync(deleteSql, new { StateId = id });
         }
 
         public async Task UpdateStartTimestamp(PrimaryKey id, long timestamp)
         {
-            using (var connection = config.CreateConnection())
+            using var connection = config.CreateConnection();
+            await connection.ExecuteAsync(updateStartTimestampSql, new
             {
-                await connection.ExecuteAsync(updateStartTimestampSql, new
-                {
-                    StateId = id,
-                    StartTimestamp = timestamp
-                });
-            }
+                StateId = id,
+                StartTimestamp = timestamp
+            });
         }
     }
 }

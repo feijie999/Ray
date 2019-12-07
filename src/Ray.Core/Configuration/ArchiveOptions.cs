@@ -1,5 +1,8 @@
 ﻿namespace Ray.Core.Configuration
 {
+    /// <summary>
+    /// 归档配置
+    /// </summary>
     public class ArchiveOptions
     {
         /// <summary>
@@ -36,14 +39,19 @@
         /// false:会把归档的事件移动到归档事件库
         /// </summary>
         public EventArchiveType EventArchiveType { get; set; } = EventArchiveType.Transfer;
-        /// <summary>
-        /// 当Grain Over时是否归档事件
-        /// </summary>
-        public bool ArchiveEventOnOver { get; set; } = true;
     }
+    /// <summary>
+    /// 事件归档类型
+    /// </summary>
     public enum EventArchiveType : byte
     {
+        /// <summary>
+        /// 转移到归档表
+        /// </summary>
         Transfer = 0,
+        /// <summary>
+        /// 直接删除
+        /// </summary>
         Delete = 1
     }
 }

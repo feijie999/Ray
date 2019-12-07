@@ -20,7 +20,6 @@ namespace Ray.Core.Channels
         readonly List<IBaseMpscChannel> consumerSequence = new List<IBaseMpscChannel>();
         private Task<bool> waitToReadTask;
         readonly ILogger logger;
-        readonly IOptions<ChannelOptions> options;
         /// <summary>
         /// 是否在自动消费中
         /// </summary>
@@ -28,23 +27,48 @@ namespace Ray.Core.Channels
         public MpscChannel(ILogger<MpscChannel<T>> logger, IOptions<ChannelOptions> options)
         {
             this.logger = logger;
-            this.options = options;
+            MaxBatchSize = options.Value.MaxBatchSize;
+            MaxMillisecondsDelay = options.Value.MaxMillisecondsDelay;
         }
+        /// <summary>
+        /// 批量数据处理每次处理的最大数据量
+        /// </summary>
+        public int MaxBatchSize { get; set; }
+        /// <summary>
+        /// 批量数据接收的最大延时
+        /// </summary>
+        public int MaxMillisecondsDelay { get; set; }
         public bool IsComplete { get; private set; }
         public bool IsChildren { get; set; }
 
-        public IMpscChannel<T> BindConsumer(Func<List<T>, Task> consumer)
+        public void BindConsumer(Func<List<T>, Task> consumer)
         {
-            if (this.consumer == default)
+            if (this.consumer is null)
                 this.consumer = consumer;
             else
-                throw new RebindConsumerException(GetType().FullName);
-            return this;
+                throw new RebindConsumerException(GetType().Name);
         }
-
+        public void BindConsumer(Func<List<T>, Task> consumer, int maxBatchSize, int maxMillisecondsDelay)
+        {
+            if (this.consumer is null)
+            {
+                this.consumer = consumer;
+                MaxBatchSize = maxBatchSize;
+                MaxMillisecondsDelay = maxMillisecondsDelay;
+            }
+            else
+                throw new RebindConsumerException(GetType().Name);
+        }
+        public void Config(int maxBatchSize, int maxMillisecondsDelay)
+        {
+            MaxBatchSize = maxBatchSize;
+            MaxMillisecondsDelay = maxMillisecondsDelay;
+        }
         public async ValueTask<bool> WriteAsync(T data)
         {
-            if (!IsChildren && !(_autoConsuming != 0))
+            if (consumer is null)
+                throw new NoBindConsumerException(GetType().Name);
+            if (!IsChildren && _autoConsuming == 0)
                 ActiveAutoConsumer();
             if (!buffer.Post(data))
                 return await buffer.SendAsync(data);
@@ -52,7 +76,7 @@ namespace Ray.Core.Channels
         }
         private void ActiveAutoConsumer()
         {
-            if (!IsChildren && !(_autoConsuming != 0))
+            if (!IsChildren && _autoConsuming == 0)
                 ThreadPool.QueueUserWorkItem(ActiveConsumer);
             async void ActiveConsumer(object state)
             {
@@ -92,10 +116,18 @@ namespace Ray.Core.Channels
             if (waitToReadTask.IsCompletedSuccessfully && waitToReadTask.Result)
             {
                 var dataList = new List<T>();
+                var startTime = DateTimeOffset.UtcNow;
                 while (buffer.TryReceive(out var value))
                 {
                     dataList.Add(value);
-                    if (dataList.Count > options.Value.MaxSizeOfBatch) break;
+                    if (dataList.Count > MaxBatchSize)
+                    {
+                        break;
+                    }
+                    else if ((DateTimeOffset.UtcNow - startTime).TotalMilliseconds > MaxMillisecondsDelay)
+                    {
+                        break;
+                    }
                 }
                 if (dataList.Count > 0)
                     await consumer(dataList);

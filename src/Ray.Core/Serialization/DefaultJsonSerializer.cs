@@ -1,34 +1,48 @@
 ﻿using System;
-using System.Text;
-using SpanJson;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Unicode;
 
 namespace Ray.Core.Serialization
 {
     public class DefaultJsonSerializer : ISerializer
     {
-        public T Deserialize<T>(string json)
+        static readonly JsonSerializerOptions options = new JsonSerializerOptions() { Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
+        public T Deserialize<T>(string json) where T : class, new()
         {
-            return JsonSerializer.Generic.Utf8.Deserialize<T>(Encoding.Default.GetBytes(json));
+            return JsonSerializer.Deserialize<T>(json);
         }
 
-        public object Deserialize(Type type, byte[] bytes)
+        public object Deserialize(byte[] bytes, Type type)
         {
-            return JsonSerializer.NonGeneric.Utf8.Deserialize(bytes, type);
+            return JsonSerializer.Deserialize(bytes, type);
+        }
+        public string Serialize<T>(T data) where T : class, new()
+        {
+            return JsonSerializer.Serialize(data, options);
+        }
+        public string Serialize(object data, Type type)
+        {
+            return JsonSerializer.Serialize(data, type, options);
+        }
+        public byte[] SerializeToUtf8Bytes<T>(T data) where T : class, new()
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(data, data.GetType(), options);
         }
 
-        public string SerializeToString<T>(T data)
+        public T Deserialize<T>(byte[] bytes) where T : class, new()
         {
-            return Encoding.Default.GetString(JsonSerializer.NonGeneric.Utf8.SerializeToArrayPool(data));
+            return JsonSerializer.Deserialize<T>(bytes);
         }
 
-        public byte[] SerializeToBytes<T>(T data)
+        public byte[] SerializeToUtf8Bytes(object data, Type type)
         {
-            return JsonSerializer.NonGeneric.Utf8.Serialize(data);
+            return JsonSerializer.SerializeToUtf8Bytes(data, type, options);
         }
 
-        public T Deserialize<T>(byte[] bytes)
+        public object Deserialize(string json, Type type)
         {
-            return JsonSerializer.Generic.Utf8.Deserialize<T>(bytes);
+            return JsonSerializer.Deserialize(json, type);
         }
     }
 }

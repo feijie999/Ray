@@ -1,7 +1,9 @@
 ﻿using Ray.Core.Event;
 using Ray.Core.Exceptions;
+using Ray.Core.Utils.Emit;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection.Emit;
 
 namespace Ray.Core.Snapshot
@@ -9,75 +11,166 @@ namespace Ray.Core.Snapshot
     public class SnapshotHandler<PrimaryKey, Snapshot> : ISnapshotHandler<PrimaryKey, Snapshot>
          where Snapshot : class, new()
     {
-        readonly Dictionary<Type, Action<Snapshot, IEvent>> _handlerDict = new Dictionary<Type, Action<Snapshot, IEvent>>();
-        readonly Dictionary<Type, Action<Snapshot, IEvent, EventBase>> _handlerDict_1 = new Dictionary<Type, Action<Snapshot, IEvent, EventBase>>();
-        readonly HandlerAttribute handlerAttribute;
+        readonly Action<object, Snapshot, IEvent, EventBase> handlerInvokeFunc;
+        readonly IgnoreEventsAttribute handlerAttribute;
         public SnapshotHandler()
         {
             var thisType = GetType();
-            var handlerAttributes = thisType.GetCustomAttributes(typeof(HandlerAttribute), false);
+            var handlerAttributes = thisType.GetCustomAttributes(typeof(IgnoreEventsAttribute), false);
             if (handlerAttributes.Length > 0)
-                handlerAttribute = (HandlerAttribute)handlerAttributes[0];
+                handlerAttribute = (IgnoreEventsAttribute)handlerAttributes[0];
             else
                 handlerAttribute = default;
-            foreach (var method in GetType().GetMethods())
+            var methods = GetType().GetMethods().Where(m =>
             {
-                var parameters = method.GetParameters();
-                if (parameters.Length >= 2 &&
-                    method.Name != nameof(Apply) &&
-                    typeof(IEvent).IsAssignableFrom(parameters[1].ParameterType))
+                var parameters = m.GetParameters();
+                return parameters.Length >= 2 && parameters.Any(p => p.ParameterType == typeof(Snapshot)) && parameters.Any(p => typeof(IEvent).IsAssignableFrom(p.ParameterType));
+            }).ToList();
+            var dynamicMethod = new DynamicMethod($"Handler_Invoke", typeof(void), new Type[] { typeof(object), typeof(Snapshot), typeof(IEvent), typeof(EventBase) }, thisType, true);
+            var ilGen = dynamicMethod.GetILGenerator();
+            var switchMethods = new List<SwitchMethodEmit>();
+            for (int i = 0; i < methods.Count; i++)
+            {
+                var method = methods[i];
+                var methodParams = method.GetParameters();
+                var caseType = methodParams.Single(p => typeof(IEvent).IsAssignableFrom(p.ParameterType)).ParameterType;
+                switchMethods.Add(new SwitchMethodEmit
                 {
-                    if (!method.IsStatic)
-                        throw new NotSupportedException("method must be static");
-                    var evtType = parameters[1].ParameterType;
-                    if (parameters.Length == 2)
+                    Mehod = method,
+                    CaseType = caseType,
+                    DeclareLocal = ilGen.DeclareLocal(caseType),
+                    Lable = ilGen.DefineLabel(),
+                    Parameters = methodParams,
+                    Index = i
+                });
+            }
+            var sortList = new List<SwitchMethodEmit>();
+            foreach (var item in switchMethods.Where(m => m.CaseType.BaseType == typeof(object)))
+            {
+                sortList.Add(item);
+                GetInheritor(item, switchMethods, sortList);
+            }
+            sortList.Reverse();
+            var defaultLabel = ilGen.DefineLabel();
+            foreach (var item in sortList)
+            {
+                ilGen.Emit(OpCodes.Ldarg_2);
+                ilGen.Emit(OpCodes.Isinst, item.CaseType);
+                if (item.Index > 3)
+                {
+                    ilGen.Emit(OpCodes.Stloc_S, item.DeclareLocal);
+                    ilGen.Emit(OpCodes.Ldloc_S, item.DeclareLocal);
+                }
+                else
+                {
+                    if (item.Index == 0)
                     {
-                        var dynamicMethod = new DynamicMethod($"{evtType.Name}_handler", typeof(void), new Type[] { parameters[0].ParameterType, typeof(IEvent) }, thisType, true);
-                        var ilGen = dynamicMethod.GetILGenerator();
-                        ilGen.DeclareLocal(evtType);
-                        ilGen.Emit(OpCodes.Ldarg_1);
-                        ilGen.Emit(OpCodes.Castclass, evtType);
                         ilGen.Emit(OpCodes.Stloc_0);
-                        ilGen.Emit(OpCodes.Ldarg_0);
                         ilGen.Emit(OpCodes.Ldloc_0);
-                        ilGen.Emit(OpCodes.Call, method);
-                        ilGen.Emit(OpCodes.Ret);
-                        var func = (Action<Snapshot, IEvent>)dynamicMethod.CreateDelegate(typeof(Action<Snapshot, IEvent>));
-                        _handlerDict.Add(evtType, func);
                     }
-                    else if (parameters[2].ParameterType == typeof(EventBase))
+                    else if (item.Index == 1)
                     {
-                        var dynamicMethod = new DynamicMethod($"{evtType.Name}_handler", typeof(void), new Type[] { parameters[0].ParameterType, typeof(IEvent), typeof(EventBase) }, thisType, true);
-                        var ilGen = dynamicMethod.GetILGenerator();
-                        ilGen.DeclareLocal(evtType);
+                        ilGen.Emit(OpCodes.Stloc_1);
+                        ilGen.Emit(OpCodes.Ldloc_1);
+                    }
+                    else if (item.Index == 2)
+                    {
+                        ilGen.Emit(OpCodes.Stloc_2);
+                        ilGen.Emit(OpCodes.Ldloc_2);
+                    }
+                    else
+                    {
+                        ilGen.Emit(OpCodes.Stloc_3);
+                        ilGen.Emit(OpCodes.Ldloc_3);
+                    }
+                }
+
+                ilGen.Emit(OpCodes.Brtrue_S, item.Lable);
+            }
+            ilGen.Emit(OpCodes.Br_S, defaultLabel);
+            foreach (var item in sortList)
+            {
+                ilGen.MarkLabel(item.Lable);
+                ilGen.Emit(OpCodes.Ldarg_0);
+                //加载第一个参数
+                if (item.Parameters[0].ParameterType == typeof(Snapshot))
+                    ilGen.Emit(OpCodes.Ldarg_1);
+                else if (item.Parameters[0].ParameterType == typeof(EventBase))
+                    ilGen.Emit(OpCodes.Ldarg_3);
+                else
+                    LdEventArgs(item, ilGen);
+                //加载第二个参数
+                if (item.Parameters[1].ParameterType == typeof(Snapshot))
+                    ilGen.Emit(OpCodes.Ldarg_1);
+                else if (item.Parameters[1].ParameterType == typeof(EventBase))
+                    ilGen.Emit(OpCodes.Ldarg_3);
+                else
+                    LdEventArgs(item, ilGen);
+                //加载第三个参数
+                if (item.Parameters.Length == 3)
+                {
+                    if (item.Parameters[1].ParameterType == typeof(Snapshot))
                         ilGen.Emit(OpCodes.Ldarg_1);
-                        ilGen.Emit(OpCodes.Castclass, evtType);
-                        ilGen.Emit(OpCodes.Stloc_0);
-                        ilGen.Emit(OpCodes.Ldarg_0);
-                        ilGen.Emit(OpCodes.Ldloc_0);
-                        ilGen.Emit(OpCodes.Ldarg_2);
-                        ilGen.Emit(OpCodes.Call, method);
-                        ilGen.Emit(OpCodes.Ret);
-                        var func = (Action<Snapshot, IEvent, EventBase>)dynamicMethod.CreateDelegate(typeof(Action<Snapshot, IEvent, EventBase>));
-                        _handlerDict_1.Add(evtType, func);
+                    else if (item.Parameters[1].ParameterType == typeof(EventBase))
+                        ilGen.Emit(OpCodes.Ldarg_3);
+                    else
+                        LdEventArgs(item, ilGen);
+                }
+                ilGen.Emit(OpCodes.Call, item.Mehod);
+                ilGen.Emit(OpCodes.Ret);
+            }
+            ilGen.MarkLabel(defaultLabel);
+            ilGen.Emit(OpCodes.Ldarg_0);
+            ilGen.Emit(OpCodes.Ldarg_2);
+            ilGen.Emit(OpCodes.Call, thisType.GetMethod(nameof(DefaultHandler)));
+            ilGen.Emit(OpCodes.Ret);
+            handlerInvokeFunc = (Action<object, Snapshot, IEvent, EventBase>)dynamicMethod.CreateDelegate(typeof(Action<object, Snapshot, IEvent, EventBase>));
+            //加载Event参数
+            static void LdEventArgs(SwitchMethodEmit item, ILGenerator gen)
+            {
+                if (item.Index > 3)
+                {
+                    gen.Emit(OpCodes.Ldloc_S, item.DeclareLocal);
+                }
+                else
+                {
+                    if (item.Index == 0)
+                    {
+                        gen.Emit(OpCodes.Ldloc_0);
+                    }
+                    else if (item.Index == 1)
+                    {
+                        gen.Emit(OpCodes.Ldloc_1);
+                    }
+                    else if (item.Index == 2)
+                    {
+                        gen.Emit(OpCodes.Ldloc_2);
+                    }
+                    else
+                    {
+                        gen.Emit(OpCodes.Ldloc_3);
                     }
                 }
             }
+            static void GetInheritor(SwitchMethodEmit from, List<SwitchMethodEmit> list, List<SwitchMethodEmit> result)
+            {
+                var inheritorList = list.Where(m => m.CaseType.BaseType == from.CaseType);
+                foreach (var inheritor in inheritorList)
+                {
+                    result.Add(inheritor);
+                    GetInheritor(inheritor, list, result);
+                }
+            }
         }
-        public virtual void Apply(Snapshot<PrimaryKey, Snapshot> snapshot, IFullyEvent<PrimaryKey> fullyEvent)
+        public virtual void Apply(Snapshot<PrimaryKey, Snapshot> snapshot, FullyEvent<PrimaryKey> fullyEvent)
         {
-            var eventType = fullyEvent.Event.GetType();
-            if (_handlerDict.TryGetValue(eventType, out var fun))
+            handlerInvokeFunc(this, snapshot.State, fullyEvent.Event, fullyEvent.Base);
+        }
+        public void DefaultHandler(IEvent evt)
+        {
+            if (handlerAttribute is null || !handlerAttribute.Ignores.Contains(evt.GetType()))
             {
-                fun(snapshot.State, fullyEvent.Event);
-            }
-            else if (_handlerDict_1.TryGetValue(eventType, out var fun_1))
-            {
-                fun_1(snapshot.State, fullyEvent.Event, fullyEvent.Base);
-            }
-            else if (handlerAttribute == default || !handlerAttribute.Ignores.Contains(eventType))
-            {
-                throw new EventNotFoundHandlerException(eventType);
+                throw new UnfindEventHandlerException(evt.GetType());
             }
         }
     }

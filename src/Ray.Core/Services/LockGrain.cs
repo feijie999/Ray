@@ -2,7 +2,6 @@
 using System.Threading.Tasks;
 using Orleans;
 using Orleans.Concurrency;
-using Ray.Core.Services.Abstractions;
 
 namespace Ray.Core.Services
 {
@@ -23,7 +22,7 @@ namespace Ray.Core.Services
                 taskSource = new TaskCompletionSource<bool>();
                 if (millisecondsDelay != 0)
                 {
-                    var tc = new CancellationTokenSource(millisecondsDelay);
+                    using var tc = new CancellationTokenSource(millisecondsDelay);
                     tc.Token.Register(() =>
                     {
                         taskSource.TrySetCanceled();

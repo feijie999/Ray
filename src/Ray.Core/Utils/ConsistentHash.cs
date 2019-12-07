@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Ray.Core.Utils
@@ -28,7 +29,7 @@ namespace Ray.Core.Utils
 
             foreach (string node in nodes)
             {
-                this.Add(node, false);
+                Add(node, false);
             }
             ayKeys = circle.Keys.ToArray();
         }
@@ -38,7 +39,7 @@ namespace Ray.Core.Utils
             Add(node, true);
         }
 
-        private void Add(string node, bool updateKeyArray)
+        public void Add(string node, bool updateKeyArray)
         {
             for (int i = 0; i < _replicate; i++)
             {
@@ -64,11 +65,16 @@ namespace Ray.Core.Utils
             }
             ayKeys = circle.Keys.ToArray();
         }
-
+        public string GetNode(string key)
+        {
+            int first = First_ge(ayKeys, BetterHash(key));
+            return circle[ayKeys[first]];
+        }
         //return the index of first item that >= val.
         //if not exist, return 0;
         //ay should be ordered array.
-        int First_ge(int[] ay, int val)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int First_ge(int[] ay, int val)
         {
             int begin = 0;
             int end = ay.Length - 1;
@@ -78,10 +84,9 @@ namespace Ray.Core.Utils
                 return 0;
             }
 
-            int mid = begin;
             while (end - begin > 1)
             {
-                mid = (end + begin) / 2;
+                int mid = (end + begin) / 2;
                 if (ay[mid] >= val)
                 {
                     end = mid;
@@ -100,25 +105,10 @@ namespace Ray.Core.Utils
             return end;
         }
 
-        public string GetNode(string key)
-        {
-            //return GetNode_slow(key);
-
-            int hash = BetterHash(key);
-
-            int first = First_ge(ayKeys, hash);
-
-            //int diff = circle.Keys[first] - hash;
-
-            return circle[ayKeys[first]];
-        }
-
-        //default String.GetHashCode() can't well spread strings like "1", "2", "3"
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int BetterHash(string key)
         {
-            uint hash = MurmurHash2.Hash(Encoding.UTF8.GetBytes(key));
-            return (int)hash;
+            return (int)MurmurHash2.Hash(Encoding.UTF8.GetBytes(key));
         }
     }
-
 }

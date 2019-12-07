@@ -19,6 +19,7 @@ namespace Ray.Core
             serviceCollection.AddTransient(typeof(IMpscChannel<>), typeof(MpscChannel<>));
             serviceCollection.AddSingleton<ISerializer, DefaultJsonSerializer>();
             serviceCollection.AddSingleton<IObserverUnitContainer, ObserverUnitContainer>();
+            serviceCollection.AddSingleton<ITypeFinder, TypeFinder>();
         }
         public static ISiloHostBuilder AddRay<StartupConfig>(this ISiloHostBuilder siloHostBuilder)
             where StartupConfig : IStartupConfig, new()
@@ -26,6 +27,14 @@ namespace Ray.Core
             siloHostBuilder.ConfigureServices((context, servicecollection) => servicecollection.AddRay<StartupConfig>());
             siloHostBuilder.AddStartupTask<SiloStartupTask>();
             return siloHostBuilder;
+        }
+
+        public static ISiloBuilder AddRay<StartupConfig>(this ISiloBuilder soilBuilder)
+            where StartupConfig : IStartupConfig, new()
+        {
+            soilBuilder.ConfigureServices((context, servicecollection) => servicecollection.AddRay<StartupConfig>());
+            soilBuilder.AddStartupTask<SiloStartupTask>();
+            return soilBuilder;
         }
     }
 }

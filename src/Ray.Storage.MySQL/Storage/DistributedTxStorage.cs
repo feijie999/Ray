@@ -3,13 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Ray.Core.Channels;
 using Ray.Core.Serialization;
-using Ray.DistributedTransaction;
+using Ray.DistributedTx;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
-using TransactionStatus = Ray.DistributedTransaction.TransactionStatus;
+using TransactionStatus = Ray.DistributedTx.TransactionStatus;
 
 namespace Ray.Storage.MySQL
 {
@@ -19,6 +19,10 @@ namespace Ray.Storage.MySQL
         readonly ISerializer serializer;
         readonly string connection;
         readonly IOptions<TransactionOptions> options;
+        readonly string delete_sql;
+        readonly string select_list_sql;
+        readonly string update_sql;
+        readonly string insert_sql;
         public DistributedTxStorage(
             IServiceProvider serviceProvider,
             IOptions<TransactionOptions> options,
@@ -29,7 +33,11 @@ namespace Ray.Storage.MySQL
             CreateEventSubRecordTable().GetAwaiter().GetResult();
             mpscChannel = serviceProvider.GetService<IMpscChannel<AsyncInputEvent<AppendInput, bool>>>();
             serializer = serviceProvider.GetService<ISerializer>();
-            mpscChannel.BindConsumer(BatchProcessing);
+            mpscChannel.BindConsumer(BatchInsertExecuter);
+            delete_sql= $"delete from {options.Value.TableName} WHERE UnitName=@UnitName and TransactionId=@TransactionId"; 
+            select_list_sql = $"select * from {options.Value.TableName} WHERE UnitName=@UnitName";
+            update_sql = $"update {options.Value.TableName} set Status=@Status where UnitName=@UnitName and TransactionId=@TransactionId";
+            insert_sql = $"INSERT IGNORE INTO {options.Value.TableName}(UnitName,TransactionId,Data,Status) VALUES(@UnitName,@TransactionId,@Data,@Status)";
         }
         public DbConnection CreateConnection()
         {
@@ -44,12 +52,10 @@ namespace Ray.Storage.MySQL
                      `Data` json not null,
                      `Status` int2 not null,
                      UNIQUE INDEX `UnitName_TransId`(`UnitName`, `TransactionId`) USING BTREE);";
-            using (var connection = CreateConnection())
-            {
-                await connection.ExecuteAsync(sql);
-            }
+            using var connection = CreateConnection();
+            await connection.ExecuteAsync(sql);
         }
-        public Task Append<Input>(string unitName, Commit<Input> commit)
+        public Task Append<Input>(string unitName, Commit<Input> commit) where Input : class, new()
         {
             return Task.Run(async () =>
             {
@@ -57,7 +63,7 @@ namespace Ray.Storage.MySQL
                 {
                     UnitName = unitName,
                     TransactionId = commit.TransactionId,
-                    Data = serializer.SerializeToString(commit.Data),
+                    Data = serializer.Serialize(commit.Data),
                     Status = commit.Status
                 });
                 var writeTask = mpscChannel.WriteAsync(wrap);
@@ -69,63 +75,49 @@ namespace Ray.Storage.MySQL
 
         public async Task Delete(string unitName, long transactionId)
         {
-            using (var conn = CreateConnection())
-            {
-                var sql = $"delete from {options.Value.TableName} WHERE UnitName=@UnitName and TransactionId=@TransactionId";
-                await conn.ExecuteAsync(sql, new { UnitName = unitName, TransactionId = transactionId });
-            }
+            using var conn = CreateConnection();
+            await conn.ExecuteAsync(delete_sql, new { UnitName = unitName, TransactionId = transactionId });
         }
-        public async Task<IList<Commit<Input>>> GetList<Input>(string unitName)
+        public async Task<IList<Commit<Input>>> GetList<Input>(string unitName) where Input : class, new()
         {
-            var getListSql = $"select * from {options.Value.TableName} WHERE UnitName=@UnitName";
-            using (var conn = CreateConnection())
+            using var conn = CreateConnection();
+            return (await conn.QueryAsync<CommitModel>(select_list_sql, new
             {
-                return (await conn.QueryAsync<CommitModel>(getListSql, new
-                {
-                    UnitName = unitName
-                })).Select(model => new Commit<Input>
-                {
-                    TransactionId = model.TransactionId,
-                    Status = model.Status,
-                    Data = serializer.Deserialize<Input>(model.Data)
-                }).AsList();
-            }
+                UnitName = unitName
+            })).Select(model => new Commit<Input>
+            {
+                TransactionId = model.TransactionId,
+                Status = model.Status,
+                Data = serializer.Deserialize<Input>(model.Data)
+            }).AsList();
         }
 
         public async Task<bool> Update(string unitName, long transactionId, TransactionStatus status)
         {
-            var sql = $"update {options.Value.TableName} set Status=@Status where UnitName=@UnitName and TransactionId=@TransactionId";
-            using (var conn = CreateConnection())
-            {
-                return await conn.ExecuteAsync(sql, new { UnitName = unitName, TransactionId = transactionId, Status = status }) > 0;
-            }
+            using var conn = CreateConnection();
+            return await conn.ExecuteAsync(update_sql, new { UnitName = unitName, TransactionId = transactionId, Status = status }) > 0;
         }
-        private async Task BatchProcessing(List<AsyncInputEvent<AppendInput, bool>> wrapperList)
+        private async Task BatchInsertExecuter(List<AsyncInputEvent<AppendInput, bool>> wrapperList)
         {
-            var saveSql = $"INSERT IGNORE INTO {options.Value.TableName}(UnitName,TransactionId,Data,Status) VALUES(@UnitName,@TransactionId,@Data,@Status)";
-            using (var conn = CreateConnection())
+            using var conn = CreateConnection();
+            await conn.OpenAsync();
+            using var trans = conn.BeginTransaction();
+            try
             {
-                await conn.OpenAsync();
-                using (var trans = conn.BeginTransaction())
+                await conn.ExecuteAsync(insert_sql, wrapperList.Select(wrapper => new
                 {
-                    try
-                    {
-                        await conn.ExecuteAsync(saveSql, wrapperList.Select(wrapper => new
-                        {
-                            wrapper.Value.UnitName,
-                            wrapper.Value.TransactionId,
-                            wrapper.Value.Data,
-                            Status = (short)wrapper.Value.Status
-                        }).ToList(), trans);
-                        trans.Commit();
-                        wrapperList.ForEach(wrap => wrap.TaskSource.TrySetResult(true));
-                    }
-                    catch (Exception e)
-                    {
-                        trans.Rollback();
-                        wrapperList.ForEach(wrap => wrap.TaskSource.TrySetException(e));
-                    }
-                }
+                    wrapper.Value.UnitName,
+                    wrapper.Value.TransactionId,
+                    wrapper.Value.Data,
+                    Status = (short)wrapper.Value.Status
+                }).ToList(), trans);
+                trans.Commit();
+                wrapperList.ForEach(wrap => wrap.TaskSource.TrySetResult(true));
+            }
+            catch (Exception e)
+            {
+                trans.Rollback();
+                wrapperList.ForEach(wrap => wrap.TaskSource.TrySetException(e));
             }
         }
     }

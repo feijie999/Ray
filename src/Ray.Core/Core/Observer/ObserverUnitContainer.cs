@@ -1,10 +1,14 @@
-﻿using System;
-using System.Linq;
-using System.Collections.Generic;
-using System.Collections.Concurrent;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Orleans;
 using Ray.Core.Abstractions;
 using Ray.Core.Exceptions;
-using Orleans;
+using Ray.Core.Observer;
+using Ray.Core.Utils;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Ray.Core
 {
@@ -15,30 +19,34 @@ namespace Ray.Core
         {
             var observableList = new List<Type>();
             var observerList = new List<ObserverAttribute>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in AssemblyHelper.GetAssemblies(serviceProvider.GetService<ILogger<ObserverUnitContainer>>()))
             {
                 foreach (var type in assembly.GetTypes())
                 {
-                    foreach (var attribute in type.GetCustomAttributes(false))
+                    if (type != typeof(IObservable) &&
+                        typeof(IObservable).IsAssignableFrom(type) &&
+                        !type.IsGenericType)
                     {
-                        if (attribute is ObservableAttribute observable)
+                        observableList.Add(type);
+                    }
+                    else
+                    {
+                        foreach (var attribute in type.GetCustomAttributes(false))
                         {
-                            observableList.Add(type);
-                            break;
-                        }
-                        if (attribute is ObserverAttribute observer)
-                        {
-                            if (observer.Observer == default)
+                            if (attribute is ObserverAttribute observer)
                             {
-                                observer.Observer = type.GetInterfaces().SingleOrDefault(t =>
-                                (typeof(IGrainWithStringKey).IsAssignableFrom(t) || typeof(IGrainWithIntegerKey).IsAssignableFrom(t)) &&
-                                t != typeof(IGrainWithStringKey) &&
-                                t != typeof(IGrainWithIntegerKey));
+                                if (observer.Observer is null)
+                                {
+                                    observer.Observer = type.GetInterfaces().SingleOrDefault(t =>
+                                    (typeof(IGrainWithStringKey).IsAssignableFrom(t) || typeof(IGrainWithIntegerKey).IsAssignableFrom(t)) &&
+                                    t != typeof(IGrainWithStringKey) &&
+                                    t != typeof(IGrainWithIntegerKey));
+                                }
+                                if (observer.Observer is null)
+                                    throw new NullReferenceException($"{nameof(ObserverAttribute.Observer)} in {type.FullName}");
+                                observerList.Add(observer);
+                                break;
                             }
-                            if (observer.Observer == default)
-                                throw new NullReferenceException($"{nameof(ObserverAttribute.Observer)} in {type.FullName}");
-                            observerList.Add(observer);
-                            break;
                         }
                     }
                 }
@@ -66,7 +74,7 @@ namespace Ray.Core
                     Register(unit);
                 }
                 else
-                    throw new PrimaryKeyTypeException(observable.FullName);
+                    throw new PrimaryKeyTypeException($"Ray can't support {observable.FullName} primary key type.");
             }
         }
         public IObserverUnit<PrimaryKey> GetUnit<PrimaryKey>(Type grainType)
@@ -78,7 +86,7 @@ namespace Ray.Core
                     return result;
                 }
                 else
-                    throw new UnMatchObserverUnitException(grainType.FullName, unit.GetType().FullName);
+                    throw new UnmatchObserverUnitException(grainType.FullName, unit.GetType().FullName);
             }
             else
                 throw new UnfindObserverUnitException(grainType.FullName);
