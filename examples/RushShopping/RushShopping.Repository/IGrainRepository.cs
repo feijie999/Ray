@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 
 namespace RushShopping.Repository
 {
+    using Microsoft.EntityFrameworkCore.ChangeTracking;
+
     public interface IGrainRepository<TEntity, in TPrimaryKey> : IDisposable where TEntity : class, IEntity<TPrimaryKey>
     {
         TEntity FirstOrDefault(TPrimaryKey id);
@@ -11,7 +13,7 @@ namespace RushShopping.Repository
 
         void Insert(TEntity entity);
 
-        Task InsertAsync(TEntity entity);
+        ValueTask<EntityEntry<TEntity>> InsertAsync(TEntity entity);
 
         TEntity Update(TEntity entity);
 

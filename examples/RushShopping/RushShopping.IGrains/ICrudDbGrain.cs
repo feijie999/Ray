@@ -5,6 +5,6 @@ namespace RushShopping.IGrains
 {
     public interface ICrudDbGrain<TPrimaryKey>
     {
-        Task Process(IFullyEvent<TPrimaryKey> @event);
+        Task Process(FullyEvent<TPrimaryKey> @event);
     }
 }

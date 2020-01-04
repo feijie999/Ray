@@ -10,7 +10,7 @@ using RushShopping.Share.Dto;
 
 namespace RushShopping.Grains.Grains
 {
-    [Producer(lBCount: 4), Observable]
+    [Producer(lBCount: 4)]
     public class CustomerGrain : RushShoppingGrain<Guid, CustomerState, Customer, CustomerDto>,
         ICustomerGrain<CustomerDto>
     {

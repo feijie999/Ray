@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace RushShopping.Repository
 {
+    using Microsoft.EntityFrameworkCore.ChangeTracking;
+
     public class GrainEfCoreRepositoryBase<TEntity, TPrimaryKey> : IGrainRepository<TEntity, TPrimaryKey>
         where TEntity : class, IEntity<TPrimaryKey>
     {
@@ -17,7 +19,7 @@ namespace RushShopping.Repository
 
         protected RushShoppingDbContext Context { get; set; }
 
-        public virtual DbSet<TEntity> Table => Context.Set<TEntity>();
+        public virtual DbSet<TEntity> DbSet => Context.Set<TEntity>();
 
         #region Implementation of IDisposable
 
@@ -38,22 +40,22 @@ namespace RushShopping.Repository
 
         public TEntity FirstOrDefault(TPrimaryKey id)
         {
-            return Table.FirstOrDefault(CreateEqualityExpressionForId(id));
+            return DbSet.FirstOrDefault(CreateEqualityExpressionForId(id));
         }
 
         public Task<TEntity> FirstOrDefaultAsync(TPrimaryKey id)
         {
-            return Table.FirstOrDefaultAsync(CreateEqualityExpressionForId(id));
+            return DbSet.FirstOrDefaultAsync(CreateEqualityExpressionForId(id));
         }
 
         public void Insert(TEntity entity)
         {
-            Table.Add(entity);
+            DbSet.Add(entity);
         }
 
-        public Task InsertAsync(TEntity entity)
+        public ValueTask<EntityEntry<TEntity>> InsertAsync(TEntity entity)
         {
-           return Table.AddAsync(entity);
+           return DbSet.AddAsync(entity);
         }
 
         public TEntity Update(TEntity entity)
@@ -76,14 +78,13 @@ namespace RushShopping.Repository
             if (entity != null)
             {
                 Delete(entity);
-                return;
             }
         }
 
         public void Delete(TEntity entity)
         {
             AttachIfNot(entity);
-            Table.Remove(entity);
+            DbSet.Remove(entity);
         }
 
         public void Commit()
@@ -104,7 +105,7 @@ namespace RushShopping.Repository
                 return;
             }
 
-            Table.Attach(entity);
+            DbSet.Attach(entity);
         }
 
         private TEntity GetFromChangeTrackerOrNull(TPrimaryKey id)

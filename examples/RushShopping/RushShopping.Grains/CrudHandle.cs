@@ -1,12 +1,12 @@
 ﻿using AutoMapper;
 using Ray.Core.Event;
 using Ray.Core.Snapshot;
-using Ray.DistributedTransaction;
+using Ray.DistributedTx;
 using RushShopping.Grains.Events;
 
 namespace RushShopping.Grains
 {
-    public class CrudHandle<TPrimaryKey, TSnapshot> : TxSnapshotHandler<TPrimaryKey, TSnapshot>,
+    public class CrudHandle<TPrimaryKey, TSnapshot> : DTxSnapshotHandler<TPrimaryKey, TSnapshot>,
         ICrudHandle<TPrimaryKey, TSnapshot>
         where TSnapshot : class, new()
     {
@@ -17,7 +17,7 @@ namespace RushShopping.Grains
             Mapper = mapper;
         }
 
-        public override void CustomApply(Snapshot<TPrimaryKey, TSnapshot> snapshot, IFullyEvent<TPrimaryKey> fullyEvent)
+        public override void CustomApply(Snapshot<TPrimaryKey, TSnapshot> snapshot, FullyEvent<TPrimaryKey> fullyEvent)
         {
             Apply(snapshot.State, fullyEvent.Event);
         }

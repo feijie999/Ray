@@ -15,7 +15,7 @@ namespace RushShopping.Grains
 {
     public abstract class
        CrudDbGrain<TMain, TSnapshot, TPrimaryKey, TEntityType> :
-            ConcurrentObserverGrain<TMain, TPrimaryKey>, ICrudDbGrain<TPrimaryKey>
+           ObserverGrain<TPrimaryKey, TMain>, ICrudDbGrain<TPrimaryKey>
         where TSnapshot : class, new()
         where TEntityType : class, IEntity<TPrimaryKey>
     {
@@ -37,9 +37,9 @@ namespace RushShopping.Grains
 
         #region Overrides of ObserverGrain<TMain,TPrimaryKey>
 
-        protected override async ValueTask OnEventDelivered(IFullyEvent<TPrimaryKey> @event)
+        protected override async ValueTask OnEventDelivered(FullyEvent<TPrimaryKey> fullyEvent)
         {
-            switch (@event.Event)
+            switch (fullyEvent.Event)
             {
                 case CreatingSnapshotEvent<TSnapshot> evt:
                     await CreatingSnapshotHandle(evt);
@@ -52,39 +52,33 @@ namespace RushShopping.Grains
                     break;
             }
 
-            await Process(@event);
+            await Process(fullyEvent);
         }
 
         private async Task CreatingSnapshotHandle(CreatingSnapshotEvent<TSnapshot> evt)
         {
-            using (var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>())
-            {
-                var entity = Mapper.Map<TEntityType>(evt.Snapshot);
-                await repository.InsertAsync(entity);
-                await repository.CommitAsync();
-            }
+            using var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>();
+            var entity = Mapper.Map<TEntityType>(evt.Snapshot);
+            repository.Insert(entity);
+            await repository.CommitAsync();
         }
 
         private async Task UpdatingSnapshotHandle(UpdatingSnapshotEvent<TSnapshot> evt)
         {
-            using (var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>())
-            {
-                var entity = Mapper.Map<TEntityType>(evt.Snapshot);
-                repository.Update(entity);
-                await repository.CommitAsync();
-            }
+            using var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>();
+            var entity = Mapper.Map<TEntityType>(evt.Snapshot);
+            repository.Update(entity);
+            await repository.CommitAsync();
         }
 
         private async Task DeletingSnapshotHandle(DeletingSnapshotEvent<TPrimaryKey> evt)
         {
-            using (var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>())
-            {
-                repository.Delete(evt.PrimaryKey);
-                await repository.CommitAsync();
-            }
+            using var repository = ServiceProvider.GetService<IGrainRepository<TEntityType, TPrimaryKey>>();
+            repository.Delete(evt.PrimaryKey);
+            await repository.CommitAsync();
         }
         #endregion
 
-        public abstract Task Process(IFullyEvent<TPrimaryKey> @event);
+        public abstract Task Process(FullyEvent<TPrimaryKey> @event);
     }
 }

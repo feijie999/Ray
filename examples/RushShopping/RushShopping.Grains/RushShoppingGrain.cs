@@ -72,9 +72,9 @@ namespace RushShopping.Grains
             await RaiseEvent(evt);
         }
 
-        public new Task Over()
+        public  Task Over()
         {
-            return base.Over();
+            return base.Over(OverType.ArchivingEvent);
         }
 
         #endregion

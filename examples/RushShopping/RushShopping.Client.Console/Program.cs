@@ -103,6 +103,7 @@ namespace RushShopping.Client.Console
                 {
                     var builder = new ClientBuilder()
                         .UseLocalhostClustering(30005)
+                        .UseDashboard()
                         .ConfigureApplicationParts(parts =>
                             parts.AddApplicationPart(typeof(ICustomerGrain<>).Assembly).WithReferences());
                     client = builder.Build();

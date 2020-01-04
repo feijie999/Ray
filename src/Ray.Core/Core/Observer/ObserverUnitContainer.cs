@@ -38,7 +38,8 @@ namespace Ray.Core
                                 if (observer.Observer is null)
                                 {
                                     observer.Observer = type.GetInterfaces().SingleOrDefault(t =>
-                                    (typeof(IGrainWithStringKey).IsAssignableFrom(t) || typeof(IGrainWithIntegerKey).IsAssignableFrom(t)) &&
+                                    (typeof(IGrainWithStringKey).IsAssignableFrom(t) || typeof(IGrainWithIntegerKey).IsAssignableFrom(t)
+                                                                                     || typeof(IGrainWithGuidKey).IsAssignableFrom(t)) &&
                                     t != typeof(IGrainWithStringKey) &&
                                     t != typeof(IGrainWithIntegerKey) &&
                                     t != typeof(IGrainWithGuidKey));
