@@ -16,6 +16,8 @@ using Transfer.Grains.Grains;
 
 namespace Transfer.Server
 {
+    using Ray.EventBus.RabbitMQ;
+
     class Program
     {
         static Task Main(string[] args)
@@ -44,17 +46,25 @@ namespace Transfer.Server
                     //注册postgresql为事件存储库
                     servicecollection.AddPostgreSQLStorage(config =>
                     {
-                        config.ConnectionDict.Add("core_event", "Server=127.0.0.1;Port=5432;Database=Ray;User Id=postgres;Password=luohuazhiyu;Pooling=true;MaxPoolSize=20;");
+                        config.ConnectionDict.Add("core_event", "Server=127.0.0.1;Port=5432;Database=Ray;User Id=postgres;Password=123456;Pooling=true;MaxPoolSize=20;");
                     });
-                    servicecollection.AddKafkaMQ(
-                    config => { },
-                    config =>
-                    {
-                        config.BootstrapServers = "192.168.1.3:9092";
-                    }, config =>
-                    {
-                        config.BootstrapServers = "192.168.1.3:9092";
-                    });
+                    //servicecollection.AddKafkaMQ(
+                    //config => { },
+                    //config =>
+                    //{
+                    //    config.BootstrapServers = "192.168.1.3:9092";
+                    //}, config =>
+                    //{
+                    //    config.BootstrapServers = "192.168.1.3:9092";
+                    //});
+                    servicecollection.AddRabbitMQ(
+                        options =>
+                        {
+                            options.Hosts = new[] { "127.0.0.1:5672" };
+                            options.UserName = "guest";
+                            options.Password = "guest";
+                            options.VirtualHost = "/";
+                        });
                     servicecollection.Configure<GrainCollectionOptions>(options =>
                     {
                         options.CollectionAge = TimeSpan.FromMinutes(5);

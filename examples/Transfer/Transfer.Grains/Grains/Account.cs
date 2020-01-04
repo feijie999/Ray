@@ -1,12 +1,14 @@
 ﻿using Ray.Core;
 using Ray.Core.Event;
-using Ray.EventBus.Kafka;
+//using Ray.EventBus.Kafka;
 using System.Threading.Tasks;
 using Transfer.Grains.Events;
 using Transfer.IGrains;
 
 namespace Transfer.Grains.Grains
 {
+    using Ray.EventBus.RabbitMQ;
+
     [Producer]
     public sealed class Account : RayGrain<long, AccountState>, IAccount
     {

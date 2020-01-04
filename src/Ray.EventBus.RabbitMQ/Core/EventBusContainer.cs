@@ -59,13 +59,7 @@ namespace Ray.EventBus.RabbitMQ
                 }
                 else if (typeof(IGrainWithGuidKey).IsAssignableFrom(type))
                 {
-                    var observerUnit = observerUnitContainer.GetUnit(type) as IObserverUnit<Guid>;
-                    var groups = observerUnit.GetGroups();
-                    foreach (var group in groups)
-                    {
-                        var groupConfig = groupsConfig.Configs?.SingleOrDefault(c => c.Group == group);
-                        eventBus.CreateConsumer<Guid>(group, groupConfig?.Config);
-                    }
+                    await eventBus.AddGrainConsumer<Guid>();
                 }
                 else
                     throw new PrimaryKeyTypeException(type.FullName);
