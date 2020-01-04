@@ -3,7 +3,7 @@ using Ray.Core.Utils;
 
 namespace Ray.Core.Event
 {
-    public class EventBase : IEventBase
+    public class EventBase
     {
         public EventBase() { }
         public EventBase(long version, long timestamp)
@@ -15,12 +15,10 @@ namespace Ray.Core.Event
         public long Timestamp { get; set; }
         public byte[] GetBytes()
         {
-            using (var ms = new PooledMemoryStream())
-            {
-                ms.Write(BitConverter.GetBytes(Version));
-                ms.Write(BitConverter.GetBytes(Timestamp));
-                return ms.ToArray();
-            }
+            using var ms = new PooledMemoryStream();
+            ms.Write(BitConverter.GetBytes(Version));
+            ms.Write(BitConverter.GetBytes(Timestamp));
+            return ms.ToArray();
         }
         public static EventBase FromBytes(byte[] bytes)
         {

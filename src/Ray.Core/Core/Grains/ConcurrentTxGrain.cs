@@ -1,12 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Ray.Core.Channels;
 using Ray.Core.Event;
 using Ray.Core.Exceptions;
 using Ray.Core.Snapshot;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Ray.Core
 {
@@ -20,19 +20,18 @@ namespace Ray.Core
         {
             await base.OnActivateAsync();
             ConcurrentChannel = ServiceProvider.GetService<IMpscChannel<ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>>>();
-            ConcurrentChannel.BindConsumer(BatchInputProcessing);
+            ConcurrentChannel.BindConsumer(ConcurrentExecuter);
         }
         public override async Task OnDeactivateAsync()
         {
             await base.OnDeactivateAsync();
             ConcurrentChannel.Complete();
         }
-        protected async ValueTask ConcurrentRaiseEvent(
-            Func<Snapshot<PrimaryKey, SnapshotType>, Func<IEvent, EventUID, Task>, Task> handler,
-            Func<bool, ValueTask> completedHandler,
-            Action<Exception> exceptionHandler)
+        protected async Task<bool> ConcurrentRaiseEvent(
+            Func<Snapshot<PrimaryKey, SnapshotType>, Func<IEvent, EventUID, Task>, Task> handler)
         {
-            var writeTask = ConcurrentChannel.WriteAsync(new ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>(handler, completedHandler, exceptionHandler));
+            var taskSource = new TaskCompletionSource<bool>();
+            var writeTask = ConcurrentChannel.WriteAsync(new ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>(defaultTransactionId, handler, taskSource));
             if (!writeTask.IsCompletedSuccessfully)
                 await writeTask;
             if (!writeTask.Result)
@@ -41,20 +40,24 @@ namespace Ray.Core
                 Logger.LogError(ex, ex.Message);
                 throw ex;
             }
+            return await taskSource.Task;
         }
-        protected async Task<bool> ConcurrentRaiseEvent(Func<Snapshot<PrimaryKey, SnapshotType>, Func<IEvent, EventUID, Task>, Task> handler)
+        protected async Task<bool> ConcurrentTxRaiseEvent(
+            long transactionId,
+            Func<Snapshot<PrimaryKey, SnapshotType>, Func<IEvent, EventUID, Task>, Task> handler)
         {
             var taskSource = new TaskCompletionSource<bool>();
-            var task = ConcurrentRaiseEvent(handler, isOk =>
+            if (transactionId <= 0)
+                throw new TxIdException();
+            var writeTask = ConcurrentChannel.WriteAsync(new ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>(transactionId, handler, taskSource));
+            if (!writeTask.IsCompletedSuccessfully)
+                await writeTask;
+            if (!writeTask.Result)
             {
-                taskSource.TrySetResult(isOk);
-                return Consts.ValueTaskDone;
-            }, ex =>
-            {
-                taskSource.TrySetException(ex);
-            });
-            if (!task.IsCompletedSuccessfully)
-                await task;
+                var ex = new ChannelUnavailabilityException(GrainId.ToString(), GrainType);
+                Logger.LogError(ex, ex.Message);
+                throw ex;
+            }
             return await taskSource.Task;
         }
         /// <summary>
@@ -65,29 +68,50 @@ namespace Ray.Core
         /// <param name="uniqueId">幂等性判定值</param>
         /// <param name="hashKey">消息异步分发的唯一hash的key</param>
         /// <returns></returns>
-        protected async Task<bool> ConcurrentRaiseEvent(IEvent evt, EventUID uniqueId = null)
+        protected Task<bool> ConcurrentRaiseEvent(IEvent evt, EventUID uniqueId = null)
         {
-            var taskSource = new TaskCompletionSource<bool>();
-            var task = ConcurrentRaiseEvent(async (state, eventFunc) =>
+            return ConcurrentRaiseEvent(async (snapshot, eventFunc) =>
             {
                 await eventFunc(evt, uniqueId);
-            }, isOk =>
-            {
-                taskSource.TrySetResult(isOk);
-                return Consts.ValueTaskDone;
-            }, ex =>
-            {
-                taskSource.TrySetException(ex);
             });
-            if (!task.IsCompletedSuccessfully)
-                await task;
-            return await taskSource.Task;
         }
-        protected virtual ValueTask OnBatchInputProcessed() => Consts.ValueTaskDone;
-        private async Task BatchInputProcessing(List<ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>> inputs)
+        protected virtual ValueTask OnConcurrentExecuted() => Consts.ValueTaskDone;
+        private async Task ConcurrentExecuter(List<ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>> inputs)
+        {
+            var autoTransactionList = new List<ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>>();
+            foreach (var input in inputs)
+            {
+                if (input.TransactionId == defaultTransactionId)
+                {
+                    autoTransactionList.Add(input);
+                }
+                else
+                {
+                    try
+                    {
+                        await input.Handler(Snapshot, async (evt, uniqueId) =>
+                         {
+                             await TxRaiseEvent(input.TransactionId, evt, uniqueId);
+                             input.Executed = true;
+                         });
+                        input.Completed(input.Executed);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, ex.Message);
+                        input.Exception(ex);
+                    }
+                }
+            }
+            if (autoTransactionList.Count > 0)
+            {
+                await AutoTransactionExcuter(autoTransactionList);
+            }
+        }
+        private async Task AutoTransactionExcuter(List<ConcurrentTransport<Snapshot<PrimaryKey, SnapshotType>>> inputs)
         {
             if (Logger.IsEnabled(LogLevel.Trace))
-                Logger.LogTrace("Start batch event processing with id = {0},state version = {1},the number of events = {2}", GrainId.ToString(), CurrentTransactionStartVersion, inputs.Count.ToString());
+                Logger.LogTrace("AutoTransaction: {0}->{1}->{2}", GrainType.FullName, GrainId.ToString(), inputs.Count.ToString());
             await BeginTransaction(defaultTransactionId);
             try
             {
@@ -104,12 +128,7 @@ namespace Ray.Core
                 await FinishTransaction(defaultTransactionId);
                 foreach (var input in inputs)
                 {
-                    if (input.Executed)
-                    {
-                        var completeTask = input.CompletedHandler(true);
-                        if (!completeTask.IsCompletedSuccessfully)
-                            await completeTask;
-                    }
+                    input.Completed(input.Executed);
                 }
             }
             catch (Exception batchEx)
@@ -123,14 +142,12 @@ namespace Ray.Core
                 catch (Exception ex)
                 {
                     Logger.LogError(ex, ex.Message);
-                    inputs.ForEach(input => input.ExceptionHandler(ex));
+                    inputs.ForEach(input => input.Exception(ex));
                 }
             }
-            var onCompletedTask = OnBatchInputProcessed();
+            var onCompletedTask = OnConcurrentExecuted();
             if (!onCompletedTask.IsCompletedSuccessfully)
                 await onCompletedTask;
-            if (Logger.IsEnabled(LogLevel.Trace))
-                Logger.LogTrace("Batch events have been processed with id = {0},state version = {1},the number of events = {2}", GrainId.ToString(), CurrentTransactionStartVersion, inputs.Count.ToString());
             async Task ReTry()
             {
                 foreach (var input in inputs)
@@ -140,15 +157,13 @@ namespace Ray.Core
                         await input.Handler(Snapshot, async (evt, uniqueId) =>
                         {
                             var result = await RaiseEvent(evt, uniqueId);
-                            var completeTask = input.CompletedHandler(result);
-                            if (!completeTask.IsCompletedSuccessfully)
-                                await completeTask;
+                            input.Completed(result);
                         });
                     }
                     catch (Exception ex)
                     {
                         Logger.LogError(ex, ex.Message);
-                        input.ExceptionHandler(ex);
+                        input.Exception(ex);
                     }
                 }
             }

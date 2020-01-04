@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Ray.Core.Abstractions;
 
-namespace Ray.Core
+namespace Ray.Core.Abstractions
 {
     public interface IObserverUnit<PrimaryKey> : IGrainID
     {
@@ -15,5 +14,7 @@ namespace Ray.Core
         Task<long[]> GetAndSaveVersion(PrimaryKey primaryKey, long srcVersion);
         List<Func<byte[], Task>> GetEventHandlers(string observerGroup);
         List<Func<byte[], Task>> GetAllEventHandlers();
+        List<Func<List<byte[]>, Task>> GetBatchEventHandlers(string observerGroup);
+        List<Func<List<byte[]>, Task>> GetAllBatchEventHandlers();
     }
 }
