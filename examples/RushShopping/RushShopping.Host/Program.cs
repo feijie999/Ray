@@ -29,11 +29,6 @@ namespace RushShopping.Host
 
     class Program
     {
-        private static ISiloHost _silo;
-        private static readonly ManualResetEvent SiloStopped = new ManualResetEvent(false);
-
-        static bool _siloStopping;
-        static readonly object SyncLock = new object();
         public static IConfigurationRoot Configuration;
         static Task Main(string[] args)
         {
@@ -41,7 +36,6 @@ namespace RushShopping.Host
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json");
             Configuration = builder.Build();
-            SetupApplicationShutdown();
             var host = CreateHost();
             return host.RunAsync();
         }
@@ -97,34 +91,6 @@ namespace RushShopping.Host
 
             var host = builder.Build();
             return host;
-        }
-
-        static void SetupApplicationShutdown()
-        {
-            Console.CancelKeyPress += (s, a) => {
-                a.Cancel = true;
-                lock (SyncLock)
-                {
-                    if (!_siloStopping)
-                    {
-                        _siloStopping = true;
-                        Task.Run(StopSilo).Ignore();
-                    }
-                }
-            };
-        }
-
-        private static async Task StartSilo()
-        {
-            await _silo.StartAsync();
-            Console.WriteLine("Silo started");
-        }
-
-        private static async Task StopSilo()
-        {
-            await _silo.StopAsync();
-            Console.WriteLine("Silo stopped");
-            SiloStopped.Set();
         }
     }
 }
