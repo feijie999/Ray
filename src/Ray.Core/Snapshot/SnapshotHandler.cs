@@ -45,12 +45,17 @@ namespace Ray.Core.Snapshot
                 });
             }
             var sortList = new List<SwitchMethodEmit>();
-            foreach (var item in switchMethods.Where(m => m.CaseType.BaseType is object))
+            foreach (var item in switchMethods.Where(m => m.CaseType.BaseType ==typeof(object)))
             {
                 sortList.Add(item);
                 GetInheritor(item, switchMethods, sortList);
             }
             sortList.Reverse();
+            foreach (var item in switchMethods)
+            {
+                if (!sortList.Contains(item))
+                    sortList.Add(item);
+            }
             var defaultLabel = ilGen.DefineLabel();
             var isShort = sortList.Count < 12;
             foreach (var item in sortList)
