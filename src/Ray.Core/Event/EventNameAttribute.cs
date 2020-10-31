@@ -10,7 +10,12 @@ namespace Ray.Core.Event
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
     public class EventNameAttribute : Attribute
     {
-        public EventNameAttribute(string code) => Code = code;
+        public EventNameAttribute()
+        {
+        }
+
+        public EventNameAttribute(string code) => this.Code = code;
+
         /// <summary>
         /// 类型唯一码
         /// </summary>

@@ -1,43 +1,66 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 
-namespace Ray.Core.Observer
+namespace Ray.Core.Abstractions.Observer
 {
     /// <summary>
-    /// 标记为观察者
+    /// Mark as observer
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
     public class ObserverAttribute : Attribute
     {
+        public ObserverAttribute(DefaultName name, Type observable, Type observer = default)
+            : this(GetGroup(name), name.ToString(), observable, observer)
+        {
+        }
+
+        public ObserverAttribute(DefaultGroup group, DefaultName name, Type observable, Type observer = default)
+           : this(group.ToString(), name.ToString(), observable, observer)
+        {
+        }
+
         /// <summary>
-        /// 事件监听者标记
+        /// Event listener mark
         /// </summary>
-        /// <param name="group">监听者分组</param>
-        /// <param name="name">监听者名称(如果是shadow请设置为null)</param>
-        /// <param name="observable">被监听的Type</param>
-        /// <param name="observer">监听者的Type</param>
+        /// <param name="group">Listener group</param>
+        /// <param name="name">the name of the listener (if it is a shadow, please set it to null)</param>
+        /// <param name="observable">Type being monitored</param>
+        /// <param name="observer">Type of listener</param>
         public ObserverAttribute(string group, string name, Type observable, Type observer = default)
         {
-            Group = group;
-            Name = name;
-            Observable = observable;
-            Observer = observer;
+            this.Group = group;
+            this.Name = name;
+            this.Observable = observable;
+            this.Observer = observer;
         }
+
+        private static string GetGroup(DefaultName name)
+        {
+            return name switch
+            {
+                DefaultName.Flow => DefaultGroup.Primary.ToString(),
+                DefaultName.Shadow => DefaultGroup.Primary.ToString(),
+                DefaultName.Db => DefaultGroup.Second.ToString(),
+                _ => DefaultGroup.Third.ToString()
+            };
+        }
+
         /// <summary>
-        /// 监听者分组
+        /// Listener group
         /// </summary>
         public string Group { get; set; }
+
         /// <summary>
-        /// 监听者名称(如果是shadow请设置为null)
+        /// Listener name (if it is shadow, please set to null)
         /// </summary>
         public string Name { get; set; }
+
         /// <summary>
-        /// 被监听的Type
+        /// Type being monitored
         /// </summary>
         public Type Observable { get; set; }
+
         /// <summary>
-        /// 监听者的Type
+        /// Type of listener
         /// </summary>
         public Type Observer { get; set; }
     }

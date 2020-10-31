@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Sdk Name="Microsoft.Build.CentralPackageVersions" Version="2.0.79" />
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.OrleansProviders" />
+    <PackageReference Include="System.Reactive" />
+    <PackageReference Include="Microsoft.Orleans.CodeGenerator.MSBuild" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ray.Core.Abstractions\Ray.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Ray.Core\Ray.Core.csproj" />
+    <ProjectReference Include="..\Ray.DistributedTx.Abstractions\Ray.DistributedTx.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

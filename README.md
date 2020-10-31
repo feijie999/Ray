@@ -1,13 +1,16 @@
 # Ray
-这是一个集成Actor,Event Sourcing,Eventual consistency的高性能分布式框架(构建分布式集群请参阅:http://dotnet.github.io/orleans/) 
 
-### 案例启动步骤
+[![Join the chat at https://gitter.im/RayTale/Ray](https://badges.gitter.im/RayTale/Ray.svg)](https://gitter.im/RayTale/Ray?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-案例里是一个简单的无事务转账功能
+This is a high-performance distributed framework that integrates Actor, Event Sourcing, and Eventual consistency (see: http://dotnet.github.io/orleans/)
 
-一、安装(mongodb or postgresql or mysql or sqlserver) and (rabbitmq or kafka)。
+### Case start steps
 
-二、在Ray.Host项目的Program.cs中选择事件持久化方式和EventBus。
+In the case is a simple transactionless transfer function
+
+1. Install (mongodb or postgresql or mysql or sqlserver) and (rabbitmq or kafka).
+
+2. Select the event persistence method and EventBus in Program.cs of the Ray.Host project.
 
 ```csharp
     var builder = new SiloHostBuilder()
@@ -15,12 +18,12 @@
         .ConfigureApplicationParts(parts => parts.AddApplicationPart(typeof(Account).Assembly).WithReferences())
         .ConfigureServices((context, servicecollection) =>
         {
-            //注册postgresql为事件存储库
+            //Register postgresql as an event repository
             servicecollection.AddPostgreSQLStorage(config =>
             {
                 config.ConnectionDict.Add("core_event", "Server=127.0.0.1;Port=5432;Database=Ray;User Id=postgres;Password=XXXX;Pooling=true;MaxPoolSize=20;");
             });
-            //配置分布式事务管理器(非必须，需要分布式事务才需设置)
+            //Configure distributed transaction manager (not required, only need to be set if distributed transaction is required)
             servicecollection.AddPostgreSQLTxStorage(options =>
             {
                 options.ConnectionKey = "core_event";
@@ -33,14 +36,14 @@
         {
             c.UserName = "admin";
             c.Password = "XXXX";
-            c.Hosts = new[] { "127.0.0.1:5672" };
+            c.Hosts = new[] {"127.0.0.1:5672" };
             c.MaxPoolSize = 100;
             c.VirtualHost = "/";
         })
         .ConfigureLogging(logging => logging.AddConsole());
 ```
 
-三、修改Ray.Client的配置信息.
+Third, modify the configuration information of Ray.Client.
 
 ```csharp
     var config = ClientConfiguration.LocalhostSilo();
@@ -51,8 +54,8 @@
         .Build();
     await client.Connect();
 ```
-四、启动Ray.Host
+Fourth, start Ray.Host
 
-五、启动Ray.Client
+Five, start Ray.Client
 
 ```

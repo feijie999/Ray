@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Sdk Name="Microsoft.Build.CentralPackageVersions" Version="2.0.79" />
+
+  <ItemGroup>
+    <PackageReference Include="Prometheus.Client" />
+    <PackageReference Include="Prometheus.Client.DependencyInjection" />
+    <PackageReference Include="Prometheus.Client.MetricPusher" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ray.Metric.Core\Ray.Metric.Core.csproj" />
+  </ItemGroup>
+</Project>
